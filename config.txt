@@ -1,0 +1,6 @@
+/buy@pipisabot
+/help@pipisabot
+/global_top@pipisabot
+/stats@pipisabot
+/top_dick@pipisabot
+/dick@pipisabot
