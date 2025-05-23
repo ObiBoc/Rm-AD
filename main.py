@@ -1,7 +1,9 @@
 import os
+import threading
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait, RPCError
-import asyncio
+from background import start_server
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
@@ -56,5 +58,9 @@ async def handle_message(client, message):
 
     last_message_id[chat_id] = current_id
 
-print("Бот запущен...")
-app.run()
+# Запускаем Flask-сервер в отдельном потоке
+if __name__ == "__main__":
+    threading.Thread(target=start_server, daemon=True).start()
+    print("Фоновый сервер Flask запущен...")
+    print("Бот запущен...")
+    app.run()
