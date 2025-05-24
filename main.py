@@ -20,6 +20,7 @@ def load_config():
     try:
         with open("config.txt", "r", encoding="utf-8") as f:
             config_texts = set(line.strip().lower() for line in f if line.strip())
+            print(f"Загружено {len(config_texts)} триггеров из config.txt")
     except FileNotFoundError:
         print("Файл config.txt не найден. Бот продолжит без фильтра.")
 
@@ -32,42 +33,39 @@ async def handle_message(client, message):
     previous_id = last_message_id.get(chat_id)
 
     if previous_id is not None and current_id > previous_id + 1:
-        # Получаем текст "триггерного" сообщения, чтобы понять, что пропускать
+        # Собираем set ID-ов, которые не будем удалять
+        ids_to_skip = set()
+
+        # Попробуем получить текст предыдущего сообщения B
         try:
-            trigger_msg = await client.get_messages(chat_id, previous_id)
-            if trigger_msg.text and trigger_msg.text.lower() in config_texts:
+            msg_b = await client.get_messages(chat_id, previous_id)
+            text_b = msg_b.text.lower().strip() if msg_b.text else ""
+            if text_b in config_texts:
+                # Если B — триггер, пропускаем сообщение B+1
                 skip_id = previous_id + 1
-                ids_to_check = [i for i in range(previous_id + 1, current_id) if i != skip_id]
-            else:
-                ids_to_check = list(range(previous_id + 1, current_id))
+                ids_to_skip.add(skip_id)
+                print(f"Сообщение {previous_id} является триггером; пропускаем сообщение {skip_id}")
         except RPCError as e:
-            # Если не удалось получить текст предыдущего — удаляем все между
-            print(f"Не удалось получить сообщение {previous_id}: {e}")
-            ids_to_check = list(range(previous_id + 1, current_id))
+            print(f"Не удалось получить сообщение B (ID {previous_id}): {e}")
 
-        # Для каждого сообщения — сначала пробуем получить текст, если ошибка, удаляем
-        for msg_id in ids_to_check:
+        # Удаляем все сообщения между B и A, кроме пропущенных
+        for msg_id in range(previous_id + 1, current_id):
+            if msg_id in ids_to_skip:
+                continue
             try:
-                msg = await client.get_messages(chat_id, msg_id)
-                # Если текст успешно получен — пропускаем удаление
-                # (дополнительно можно проверять msg.text или другие поля)
-                print(f"Сообщение {msg_id} получено, удаление не требуется.")
-            except RPCError:
-                # Ошибка при получении — удаляем сообщение
-                try:
-                    await client.delete_messages(chat_id, msg_id)
-                    print(f"Удалено сообщение {msg_id} в чате {chat_id}")
-                except FloodWait as e:
-                    print(f"FloodWait при удалении {msg_id}: ждём {e.value} сек")
-                    await asyncio.sleep(e.value)
-                except RPCError as e:
-                    print(f"Ошибка при удалении {msg_id}: {e}")
+                await client.delete_messages(chat_id, msg_id)
+                print(f"Удалено сообщение {msg_id} в чате {chat_id}")
+            except FloodWait as e:
+                print(f"FloodWait при удалении {msg_id}: ждём {e.value} сек")
+                await asyncio.sleep(e.value)
+            except RPCError as e:
+                print(f"Ошибка при удалении {msg_id}: {e}")
 
-    # Обновляем ID последнего сообщения
+    # Обновляем ID последнего сообщения для данного чата
     last_message_id[chat_id] = current_id
 
-# Запускаем Flask-сервер в отдельном потоке
 if __name__ == "__main__":
+    # Запускаем фоновый Flask-сервер
     threading.Thread(target=start_server, daemon=True).start()
     print("Фоновый сервер Flask запущен...")
     print("Бот запущен...")
