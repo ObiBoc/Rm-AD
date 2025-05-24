@@ -31,31 +31,39 @@ async def handle_message(client, message):
     current_id = message.id
     previous_id = last_message_id.get(chat_id)
 
-    if previous_id is not None:
-        if current_id == previous_id + 1:
-            pass
-        elif current_id > previous_id + 1:
+    if previous_id is not None and current_id > previous_id + 1:
+        # Получаем текст "триггерного" сообщения, чтобы понять, что пропускать
+        try:
+            trigger_msg = await client.get_messages(chat_id, previous_id)
+            if trigger_msg.text and trigger_msg.text.lower() in config_texts:
+                skip_id = previous_id + 1
+                ids_to_check = [i for i in range(previous_id + 1, current_id) if i != skip_id]
+            else:
+                ids_to_check = list(range(previous_id + 1, current_id))
+        except RPCError as e:
+            # Если не удалось получить текст предыдущего — удаляем все между
+            print(f"Не удалось получить сообщение {previous_id}: {e}")
+            ids_to_check = list(range(previous_id + 1, current_id))
+
+        # Для каждого сообщения — сначала пробуем получить текст, если ошибка, удаляем
+        for msg_id in ids_to_check:
             try:
-                trigger_msg = await client.get_messages(chat_id, previous_id)
-                if trigger_msg.text and trigger_msg.text.lower() in config_texts:
-                    skip_id = previous_id + 1
-                    ids_to_delete = [i for i in range(previous_id + 1, current_id) if i != skip_id]
-                else:
-                    ids_to_delete = list(range(previous_id + 1, current_id))
+                msg = await client.get_messages(chat_id, msg_id)
+                # Если текст успешно получен — пропускаем удаление
+                # (дополнительно можно проверять msg.text или другие поля)
+                print(f"Сообщение {msg_id} получено, удаление не требуется.")
+            except RPCError:
+                # Ошибка при получении — удаляем сообщение
+                try:
+                    await client.delete_messages(chat_id, msg_id)
+                    print(f"Удалено сообщение {msg_id} в чате {chat_id}")
+                except FloodWait as e:
+                    print(f"FloodWait при удалении {msg_id}: ждём {e.value} сек")
+                    await asyncio.sleep(e.value)
+                except RPCError as e:
+                    print(f"Ошибка при удалении {msg_id}: {e}")
 
-                for msg_id in ids_to_delete:
-                    try:
-                        await client.delete_messages(chat_id, msg_id)
-                        print(f"Удалено сообщение {msg_id} в чате {chat_id}")
-                    except FloodWait as e:
-                        print(f"FloodWait: ждём {e.value} сек")
-                        await asyncio.sleep(e.value)
-                    except RPCError as e:
-                        print(f"Ошибка при удалении {msg_id}: {e}")
-
-            except RPCError as e:
-                print(f"Ошибка при получении предыдущего сообщения: {e}")
-
+    # Обновляем ID последнего сообщения
     last_message_id[chat_id] = current_id
 
 # Запускаем Flask-сервер в отдельном потоке
